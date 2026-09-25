@@ -1155,6 +1155,15 @@ function headlineFor(key, up){
   return esc(drawLine(fam + dir, lines)).split('{name}').join(esc(assetName(key)));
 }
 
+// Every month gets exactly one wire check. The frame loop calls this partway through
+// the month so the headline lands before the move; advanceMonth calls it as a backstop
+// so a throttled tab that batches months still logs the event rather than losing it.
+function ensureNewsFor(upcomingT){
+  if (!S || S.newsFiredFor >= upcomingT) return;
+  S.newsFiredFor = upcomingT;
+  fireNews(upcomingT);
+}
+
 function fireNews(nextT){
   if (nextT > MONTHS_TOTAL) return;
   var i = S.ws + nextT;
