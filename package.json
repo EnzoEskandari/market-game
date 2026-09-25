@@ -4,7 +4,8 @@
   "description": "A twenty-minute investing game played on real market history, solo or at a shared table.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node test/smoke.js"
   },
   "engines": {
     "node": ">=18"
