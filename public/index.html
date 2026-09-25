@@ -659,9 +659,8 @@ function mulberry32(a){
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
 }
-// Life events are drawn from the seed, so everyone at a table gets the same bills
-// at the same moment. Base amounts are in start-of-window dollars and get scaled by
-// CPI when they land, so a 1974 repair and a 2014 repair both feel right.
+// Base amounts are in start-of-window dollars and get scaled by CPI when they land,
+// so a 1974 repair and a 2014 repair both feel right.
 var LIFE_EVENTS = [
   'Car repair', 'Dentist bill', 'Vet bill', 'Broken laptop', 'Boiler packed in',
   'Insurance deductible', 'Emergency flight home', 'Tax bill you forgot about',
@@ -700,17 +699,23 @@ function makeSeed(code){
     var q = Math.floor(rnd()*(k+1));
     var tm = shuffled[k]; shuffled[k] = shuffled[q]; shuffled[q] = tm;
   }
-  var events = [], et = 7 + Math.floor(rnd()*12);
-  while (et < MONTHS_TOTAL){
-    var roll = rnd(), amt;
-    if (roll < 0.50) amt = 150 + rnd()*450;        // the small stuff
-    else if (roll < 0.85) amt = 600 + rnd()*900;   // an annoying month
-    else amt = 1500 + rnd()*1500;                  // genuinely painful
-    events.push({t: et, a: Math.round(amt/10)*10, i: Math.floor(rnd()*LIFE_EVENTS.length)});
-    et += 9 + Math.floor(rnd()*20);
-  }
-  return {code: n, ws: ws, picks: picks, scale: scale, events: events,
+  return {code: n, ws: ws, picks: picks, scale: scale,
           botPicks: shuffled.slice(0, Math.min(2, shuffled.length))};
+}
+
+// Bills are personal: every player draws their own schedule with ordinary randomness,
+// so two people at the same table get different bills at different times.
+function makeLifeEvents(){
+  var events = [], et = 7 + Math.floor(Math.random()*12);
+  while (et < MONTHS_TOTAL){
+    var roll = Math.random(), amt;
+    if (roll < 0.50) amt = 150 + Math.random()*450;        // the small stuff
+    else if (roll < 0.85) amt = 600 + Math.random()*900;   // an annoying month
+    else amt = 1500 + Math.random()*1500;                  // genuinely painful
+    events.push({t: et, a: Math.round(amt/10)*10, i: Math.floor(Math.random()*LIFE_EVENTS.length)});
+    et += 9 + Math.floor(Math.random()*20);
+  }
+  return events;
 }
 
 function newState(seed, mode, startAt){
@@ -734,7 +739,7 @@ function newState(seed, mode, startAt){
     stockIds: picks,
     bots: bots,
     log: [], news: [], newsFiredFor: 0, hotKeys: {},
-    owed: 0, lifePaid: 0, lifeCount: 0, joinedLate: false,
+    owed: 0, lifePaid: 0, lifeCount: 0, joinedLate: false, lifeEvents: makeLifeEvents(),
     nw: [PAYCHECK],
     sel: 'savings', seq: 1, finished: false,
     cdTerm: 'y1', bondTerm: 'y5'
@@ -944,70 +949,190 @@ function standings(){
 }
 
 // ---------- the wire ----------
+// Headlines match the company's industry, say plainly which way the price is going,
+// and never name a real event, so the era stays hidden until the end.
 var NEWS = {
-  stockUp: [
-    '{n} is said to be closing a supply deal far bigger than anyone expected',
-    'Takeover chatter is building around {n}',
-    'Analysts are scrambling to raise targets on {n} before the open',
-    '{n} is about to report a blowout quarter',
-    'A rival just walked away from the {s} market &mdash; {n} stands to take the lot'
+ "any": {
+  "up": [
+   "{name} just reported its best profits ever",
+   "A bigger company wants to buy {name} at a high price",
+   "{name} is buying back a huge chunk of its own shares"
   ],
-  stockDown: [
-    'Regulators have opened an inquiry into {n}',
-    '{n} is understood to be warning that results will miss badly',
-    'A key customer is walking away from {n}',
-    'Auditors have flagged a problem in the books at {n}',
-    'Short sellers are circling {n} ahead of the filing'
-  ],
-  indexUp: [
-    'Washington signals easier policy &mdash; buyers are lining up across the board',
-    'The tape is turning. Every desk on the floor is bidding'
-  ],
-  indexDown: [
-    'Selling is begetting selling. The floor is bracing for it',
-    'Margin calls are going out across the street tonight'
-  ],
-  goldUp: [
-    'Investors are running for hard assets &mdash; dealers report queues',
-    'Confidence in paper money is cracking and the bullion desks are swamped'
-  ],
-  goldDown: [
-    'The safe-haven bid is draining out of bullion',
-    'Central banks are said to be letting gold go'
-  ],
-  // Commodities invert: bad news for the crop is good news for the price. Each line
-  // says which way the price goes so nobody has to work it out in four seconds.
-  comUp: [
-    'Drought is scorching the {n} belt &mdash; the price is spiking',
-    'A huge export order for {n} just cleared and the price is running',
-    'Rail strikes have choked {n} supply, sending the price up',
-    '{n} stockpiles are running dry and traders are paying up for what is left'
-  ],
-  comDown: [
-    'A record {n} harvest is coming in and the price is collapsing',
-    'Buyers have stepped away from {n} &mdash; the price is sliding',
-    'Government {n} stockpiles are being dumped, driving the price down',
-    'A bumper {n} crop has flooded the market and the price is falling'
+  "down": [
+   "{name}'s profits came in far below what investors expected",
+   "{name}'s CEO suddenly quit in the middle of an accounting investigation",
+   "The government has opened an investigation into {name}"
   ]
+ },
+ "tech": {
+  "up": [
+   "{name}'s new product is selling out everywhere",
+   "{name} just won a huge government technology contract",
+   "Big companies are switching to {name}'s systems in droves"
+  ],
+  "down": [
+   "{name}'s big new product launch is a flop",
+   "A rival just released something cheaper and better than {name}'s",
+   "{name} is losing its biggest customers to competitors"
+  ]
+ },
+ "energy": {
+  "up": [
+   "Oil prices are surging, and {name} is cashing in",
+   "{name} just struck a massive new oil field",
+   "Fuel shortages have demand for {name}'s services soaring"
+  ],
+  "down": [
+   "Oil prices are crashing, and {name}'s profits are going with them",
+   "A major spill at a {name} site will cost it billions",
+   "{name}'s biggest drilling project came up dry"
+  ]
+ },
+ "health": {
+  "up": [
+   "Regulators just approved {name}'s new drug",
+   "{name}'s trial results are better than anyone hoped",
+   "Hospitals are lining up to buy {name}'s new treatment"
+  ],
+  "down": [
+   "Regulators just rejected {name}'s most important new drug",
+   "{name}'s big drug trial failed",
+   "{name} is being sued over side effects from its best-seller"
+  ]
+ },
+ "everyday": {
+  "up": [
+   "{name}'s new product is flying off store shelves",
+   "{name} just got into every major supermarket chain",
+   "{name} is expanding into huge new markets overseas"
+  ],
+  "down": [
+   "{name} is recalling millions of products over a safety problem",
+   "Shoppers are switching from {name} to cheaper store brands",
+   "A health scare is hurting sales of {name}'s best-known product"
+  ]
+ },
+ "spending": {
+  "up": [
+   "{name}'s newest launch is a massive hit",
+   "{name} is posting record sales as people start spending again",
+   "Customers are leaving rivals and flocking to {name}"
+  ],
+  "down": [
+   "People are cutting back, and {name}'s sales are dropping fast",
+   "{name}'s big new launch is a flop with customers",
+   "A safety scandal has customers avoiding {name}"
+  ]
+ },
+ "industrial": {
+  "up": [
+   "{name} just landed the biggest order in its history",
+   "A huge government building program is sending work to {name}",
+   "Factories are booming, and {name} can't make things fast enough"
+  ],
+  "down": [
+   "Factories are slowing down, and {name}'s orders are drying up",
+   "{name} just lost a giant contract to a competitor",
+   "A strike has shut down {name}'s main factories"
+  ]
+ },
+ "materials": {
+  "up": [
+   "Prices for what {name} makes are shooting up",
+   "{name} just signed a huge long-term supply deal",
+   "A shortage has buyers paying top dollar for {name}'s products"
+  ],
+  "down": [
+   "Prices for what {name} makes are collapsing",
+   "An explosion has shut down {name}'s biggest plant",
+   "{name} has been hit with a huge fine for pollution"
+  ]
+ },
+ "aero": {
+  "up": [
+   "{name} just won a giant military contract",
+   "Airlines are placing record orders with {name}",
+   "Rising defense spending is flowing straight to {name}"
+  ],
+  "down": [
+   "{name}'s newest aircraft has been grounded over safety problems",
+   "The government just cancelled {name}'s biggest contract",
+   "Airlines are cancelling their orders with {name}"
+  ]
+ },
+ "index": {
+  "up": [
+   "Interest rates were just cut, and stocks are taking off",
+   "Strong jobs numbers have investors piling into stocks",
+   "The recession looks like it's ending, and the market is rallying",
+   "Companies everywhere are reporting record profits"
+  ],
+  "down": [
+   "Panic is spreading, and investors are selling everything",
+   "Recession fears are dragging the whole market down",
+   "Interest rates just jumped, and stocks are tumbling",
+   "A major bank has collapsed, and the whole market is sliding"
+  ]
+ },
+ "gold": {
+  "up": [
+   "Inflation fears have investors rushing into gold",
+   "A crisis overseas has people buying gold to protect their money",
+   "The dollar is weakening, and gold is shooting up"
+  ],
+  "down": [
+   "Markets are calm, nobody wants gold, and its price is falling",
+   "Central banks are selling off gold, pushing the price down",
+   "A strong dollar is sending the gold price lower"
+  ]
+ },
+ "crop": {
+  "up": [
+   "A drought is wrecking the {crop} harvest, and prices are soaring",
+   "A huge overseas {crop} order just came in, pushing prices up",
+   "Floods have destroyed {crop} fields, and prices are climbing fast",
+   "{Crop} supplies are running low, and prices are jumping"
+  ],
+  "down": [
+   "A record {crop} harvest has flooded the market, and prices are falling",
+   "A big overseas buyer cancelled its {crop} orders, sending prices down",
+   "Perfect weather means a giant {crop} crop, and prices are dropping",
+   "The government is dumping its {crop} stockpile, pushing prices down"
+  ]
+ }
 };
-function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+var NEWS_FAMILY = {"Computing": "tech", "Semiconductors": "tech", "Office Equipment": "tech", "Telecom": "tech", "Oil & Gas": "energy", "Oilfield Services": "energy", "Healthcare": "health", "Pharmaceuticals": "health", "Beverages": "everyday", "Food & Drink": "everyday", "Household Goods": "everyday", "Tobacco": "everyday", "Personal Care": "everyday", "Restaurants": "spending", "Media": "spending", "Automobiles": "spending", "Conglomerate": "industrial", "Industrials": "industrial", "Heavy Machinery": "industrial", "Industrial Tech": "industrial", "Electrical Equipment": "industrial", "Motion Control": "industrial", "Tools & Hardware": "industrial", "Chemicals": "materials", "Metals": "materials", "Paper & Packaging": "materials", "Aerospace": "aero", "Defense": "aero"};
+var CROP_WORD = {corn:'corn', wheat:'wheat', soy:'soybean'};
 
-function headlineFor(key, up){
-  var name = esc(assetName(key));
-  if (key === 'index') return pick(up ? NEWS.indexUp : NEWS.indexDown);
-  if (key === 'gold') return pick(up ? NEWS.goldUp : NEWS.goldDown);
-  if (key.indexOf('com:') === 0) return pick(up ? NEWS.comUp : NEWS.comDown).split('{n}').join(name);
-  var sector = esc(assetSector(key)).toLowerCase();
-  return pick(up ? NEWS.stockUp : NEWS.stockDown).split('{n}').join(name).split('{s}').join(sector);
+// Each pool is a shuffled bag: a line cannot come round again until every
+// other line in that pool has been used.
+var newsBags = {};
+function drawLine(bagKey, lines){
+  var bag = newsBags[bagKey];
+  if (!bag || !bag.length){
+    bag = lines.map(function(_, i){ return i; });
+    for (var i = bag.length - 1; i > 0; i--){
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = bag[i]; bag[i] = bag[j]; bag[j] = tmp;
+    }
+    newsBags[bagKey] = bag;
+  }
+  return lines[bag.pop()];
 }
 
-// Every month gets exactly one wire check. The frame loop calls this partway through
-// the month so the headline lands before the move; advanceMonth calls it as a backstop
-// so a throttled tab that batches months still logs the event rather than losing it.
-function ensureNewsFor(upcomingT){
-  if (!S || S.newsFiredFor >= upcomingT) return;
-  S.newsFiredFor = upcomingT;
-  fireNews(upcomingT);
+function headlineFor(key, up){
+  var dir = up ? 'up' : 'down';
+  if (key === 'index') return esc(drawLine('index' + dir, NEWS.index[dir]));
+  if (key === 'gold') return esc(drawLine('gold' + dir, NEWS.gold[dir]));
+  if (key.indexOf('com:') === 0){
+    var crop = CROP_WORD[key.slice(4)] || 'grain';
+    return esc(drawLine('crop' + dir, NEWS.crop[dir])
+      .split('{crop}').join(crop)
+      .split('{Crop}').join(crop.charAt(0).toUpperCase() + crop.slice(1)));
+  }
+  var fam = NEWS_FAMILY[assetSector(key)] || 'any';
+  var lines = NEWS[fam][dir].concat(fam === 'any' ? [] : NEWS.any[dir]);
+  return esc(drawLine(fam + dir, lines)).split('{name}').join(esc(assetName(key)));
 }
 
 function fireNews(nextT){
@@ -1030,7 +1155,7 @@ function fireNews(nextT){
     });
     if (S.news.length > 40) S.news.pop();
     S.hotKeys[h.key] = {t: nextT + 1, up: up};
-    toast('<b>' + (up ? 'BULLISH &#9650;' : 'BEARISH &#9660;') + ' &middot; ' +
+    toast('<b>' + (up ? 'PRICE UP &#9650;' : 'PRICE DOWN &#9660;') + ' &middot; ' +
       esc(assetName(h.key)) + '</b>' + S.news[0].x, 'news ' + (up ? 'news-up' : 'news-down'));
   });
   if (!S.catchUp){ renderNews(); renderMarket(); }
@@ -1101,8 +1226,9 @@ function advanceMonth(){
     flashBar();
   }
 
-  for (var ei = 0; ei < S.seed.events.length; ei++){
-    if (S.seed.events[ei].t === t) fireLifeEvent(S.seed.events[ei]);
+  var evs = S.lifeEvents || [];
+  for (var ei = 0; ei < evs.length; ei++){
+    if (evs[ei].t === t) fireLifeEvent(evs[ei]);
   }
   settleDebt();
 
@@ -1455,7 +1581,7 @@ function renderNews(){
       '<div class="meta"><span>Y' + n.y + ' ' + MONTH_NAMES[n.mo].charAt(0) +
         MONTH_NAMES[n.mo].slice(1,3).toLowerCase() + '</span>' +
         '<span class="tag ' + (n.up ? 'up' : 'down') + '">' +
-          (n.up ? 'BULLISH &#9650;' : 'BEARISH &#9660;') + '</span>' +
+          (n.up ? 'PRICE UP &#9650;' : 'PRICE DOWN &#9660;') + '</span>' +
         '<span>' + esc(n.name) + '</span></div>' +
       '<div class="hl">' + n.x + '</div>';
     ol.appendChild(li);
@@ -2375,7 +2501,7 @@ function catchUpToNow(){
 
 function beginGame(state){
   S = state;
-  mktSig = ''; tradeSig = ''; hoverIdx = -1; chartCtx = null;
+  mktSig = ''; tradeSig = ''; hoverIdx = -1; chartCtx = null; newsBags = {};
   $('screen-intro').hidden = true;
   $('screen-end').hidden = true;
   $('screen-lobby').hidden = true;
