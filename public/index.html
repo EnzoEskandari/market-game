@@ -659,13 +659,27 @@ function mulberry32(a){
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
 }
-// Base amounts are in start-of-window dollars and get scaled by CPI when they land,
-// so a 1974 repair and a 2014 repair both feel right.
+// Every bill has its own realistic price range. Amounts are not inflation-scaled,
+// because paychecks are a flat $5,000 in every era: scaling bills alone would push
+// a big one past two paychecks in a high-inflation run.
 var LIFE_EVENTS = [
-  'Car repair', 'Dentist bill', 'Vet bill', 'Broken laptop', 'Boiler packed in',
-  'Insurance deductible', 'Emergency flight home', 'Tax bill you forgot about',
-  'Roof leak', 'Speeding ticket', 'Wedding gift and travel', 'Phone screen',
-  'New glasses', 'Moving costs', 'Bike stolen', 'Washing machine died'
+  {n:'Speeding ticket',                    lo:150,  hi:300},
+  {n:'Cracked phone screen',               lo:150,  hi:300},
+  {n:'New glasses',                        lo:200,  hi:450},
+  {n:'Bike stolen',                        lo:200,  hi:600},
+  {n:'Vet bill',                           lo:250,  hi:900},
+  {n:'Dentist bill',                       lo:300,  hi:1200},
+  {n:'Tax bill you forgot about',          lo:300,  hi:2000},
+  {n:'Friend\u2019s wedding (gift and travel)', lo:400, hi:1200},
+  {n:'Car repair',                         lo:400,  hi:1800},
+  {n:'Washing machine died',               lo:500,  hi:1000},
+  {n:'Insurance deductible',               lo:500,  hi:1000},
+  {n:'Emergency flight home',              lo:500,  hi:1500},
+  {n:'Broken laptop',                      lo:600,  hi:1400},
+  {n:'Moving costs',                       lo:800,  hi:2500},
+  {n:'Hospital bill',                      lo:800,  hi:3000},
+  {n:'Roof leak',                          lo:1000, hi:3000},
+  {n:'Furnace broke',                      lo:1500, hi:3000}
 ];
 
 function seedCode(n){ return n.toString(36).toUpperCase(); }
@@ -706,14 +720,20 @@ function makeSeed(code){
 // Bills are personal: every player draws their own schedule with ordinary randomness,
 // so two people at the same table get different bills at different times.
 function makeLifeEvents(){
+  // cheaper bills are more common: weight each by the inverse of its typical cost
+  var weights = LIFE_EVENTS.map(function(e){ return 1000 / ((e.lo + e.hi) / 2); });
+  var total = weights.reduce(function(a, b){ return a + b; }, 0);
+  function pickEvent(){
+    var r = Math.random() * total;
+    for (var i = 0; i < weights.length; i++){ r -= weights[i]; if (r <= 0) return i; }
+    return weights.length - 1;
+  }
   var events = [], et = 7 + Math.floor(Math.random()*12);
   while (et < MONTHS_TOTAL){
-    var roll = Math.random(), amt;
-    if (roll < 0.50) amt = 150 + Math.random()*450;        // the small stuff
-    else if (roll < 0.85) amt = 600 + Math.random()*900;   // an annoying month
-    else amt = 1500 + Math.random()*1500;                  // genuinely painful
-    events.push({t: et, a: Math.round(amt/10)*10, i: Math.floor(Math.random()*LIFE_EVENTS.length)});
-    et += 9 + Math.floor(Math.random()*20);
+    var i = pickEvent(), e = LIFE_EVENTS[i];
+    var amt = Math.round((e.lo + Math.random() * (e.hi - e.lo)) / 10) * 10;
+    events.push({t: et, i: i, a: amt});
+    et += 9 + Math.floor(Math.random()*22);
   }
   return events;
 }
@@ -1196,16 +1216,15 @@ function settleDebt(quiet){
 }
 
 function fireLifeEvent(ev){
-  var cpi0 = D.cpi[S.ws], cpi1 = D.cpi[Math.min(m(), D.months-1)];
-  var amount = Math.round(ev.a * (cpi1 / cpi0) / 10) * 10;
-  var label = LIFE_EVENTS[ev.i % LIFE_EVENTS.length];
+  var amount = ev.a;
+  var label = LIFE_EVENTS[ev.i % LIFE_EVENTS.length].n;
   S.lifeCount++;
   S.owed += amount;
   settleDebt(true);   // pay straight away when the cash is there, silently
   if (!S.catchUp){
-    logEvent('life', label + ' &mdash; ' + money(amount) +
+    logEvent('life', esc(label) + ' &mdash; ' + money(amount) +
       (S.owed > 0 ? ' (you are short ' + money(S.owed) + ')' : ''));
-    toast('<b>Life happens</b>' + label + ' &mdash; ' + money(amount), 'life');
+    toast('<b>Life happens</b>' + esc(label) + ' &mdash; ' + money(amount), 'life');
   }
 }
 
