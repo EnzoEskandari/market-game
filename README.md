@@ -121,7 +121,8 @@ a random twenty-year window and hides which one until the end.
 
 | Series | Source |
 |---|---|
-| Savings and CD rates | Fed funds and Treasury bill/note yields (FRED) |
+| Savings rate | Regulation Q passbook ceilings to Nov 1982; M2 own rate, the average paid on household deposits (FRED), to mid-2019; 51% of the 3-month T-bill after that |
+| CD rates | 3-month T-bill and 1/3-year Treasury yields (FRED), capped at the Regulation Q certificate ceilings before June 1978 |
 | Bond yields | 3, 5 and 10-year Treasury constant maturity (FRED) |
 | Index fund | S&P 500 with dividends reinvested (Shiller dataset) |
 | Individual stocks | Real listed companies, adjusted close, under fictional names |
