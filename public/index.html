@@ -153,6 +153,9 @@
   .toast.life{background:var(--down); color:#2a0b08; text-align:left; line-height:1.35;}
   .toast.life b{display:block; font-family:var(--font-mono); font-size:10px; letter-spacing:.11em; text-transform:uppercase; opacity:.7; margin-bottom:3px;}
   .log li.ev-life{border-left-color:var(--down);}
+  .toast.luck{background:var(--up); color:#062015; text-align:left; line-height:1.35;}
+  .toast.luck b{display:block; font-family:var(--font-mono); font-size:10px; letter-spacing:.11em; text-transform:uppercase; opacity:.7; margin-bottom:3px;}
+  .log li.ev-luck{border-left-color:var(--up);}
   .flashpay{animation:flashpay 1.1s ease-out;}
   @keyframes flashpay{0%{background:var(--up);}100%{background:var(--surface-2);}}
 
@@ -702,6 +705,26 @@ var LIFE_EVENTS = [
   {n:'Furnace broke',                      lo:1500, hi:3000}
 ];
 
+// Small windfalls, capped at $500 so they soften bad luck without cancelling it.
+var LUCKY_EVENTS = [
+  {n:'Found cash in an old jacket',        lo:20,  hi:80},
+  {n:'Cashback reward',                    lo:25,  hi:120},
+  {n:'Birthday money',                     lo:25,  hi:150},
+  {n:'Class-action settlement check',      lo:30,  hi:150},
+  {n:'Friend paid you back',               lo:40,  hi:200},
+  {n:'Sold old clothes online',            lo:40,  hi:200},
+  {n:'Won a raffle',                       lo:50,  hi:300},
+  {n:'Insurance refund',                   lo:50,  hi:250},
+  {n:'Garage sale',                        lo:60,  hi:250},
+  {n:'Sold your old phone',                lo:60,  hi:250},
+  {n:'Sold furniture you didn\u2019t need', lo:75, hi:300},
+  {n:'Weekend side job',                   lo:80,  hi:300},
+  {n:'Overtime shift',                     lo:100, hi:350},
+  {n:'Won a contest',                      lo:100, hi:500},
+  {n:'Tax refund',                         lo:150, hi:500},
+  {n:'Bonus at work',                      lo:200, hi:500}
+];
+
 function seedCode(n){ return n.toString(36).toUpperCase(); }
 function parseSeedCode(s){
   var n = parseInt(String(s || '').replace(/[^0-9a-zA-Z]/g, ''), 36);
@@ -758,6 +781,20 @@ function makeLifeEvents(){
   return events;
 }
 
+function makeLuckyEvents(){
+  var weights = LUCKY_EVENTS.map(function(e){ return 100 / ((e.lo + e.hi) / 2); });
+  var total = weights.reduce(function(a, b){ return a + b; }, 0);
+  var events = [], et = 10 + Math.floor(Math.random()*15);
+  while (et < MONTHS_TOTAL){
+    var r = Math.random() * total, i = 0;
+    for (; i < weights.length - 1; i++){ r -= weights[i]; if (r <= 0) break; }
+    var e = LUCKY_EVENTS[i];
+    events.push({t: et, i: i, a: Math.round((e.lo + Math.random() * (e.hi - e.lo)) / 5) * 5});
+    et += 20 + Math.floor(Math.random()*21);
+  }
+  return events;
+}
+
 function newState(seed, mode, startAt){
   seed = seed || makeSeed();
   var ws = seed.ws;
@@ -780,6 +817,7 @@ function newState(seed, mode, startAt){
     bots: bots,
     log: [], news: [], newsFiredFor: 0, hotKeys: {},
     owed: 0, lifePaid: 0, lifeCount: 0, joinedLate: false, lifeEvents: makeLifeEvents(),
+    luckyEvents: makeLuckyEvents(), luckyGot: 0, luckyCount: 0,
     nw: [PAYCHECK],
     sel: 'savings', seq: 1, finished: false,
     cdTerm: 'y1', bondTerm: 'y5'
@@ -1260,6 +1298,18 @@ function settleDebt(quiet){
   }
 }
 
+function fireLuckyEvent(ev){
+  var label = LUCKY_EVENTS[ev.i % LUCKY_EVENTS.length].n;
+  S.savings += ev.a;
+  S.luckyGot += ev.a;
+  S.luckyCount++;
+  if (!S.catchUp){
+    logEvent('luck', esc(label) + ' &mdash; +' + money(ev.a));
+    toast('<b>Lucky break</b>' + esc(label) + ' &mdash; +' + money(ev.a), 'luck');
+  }
+  settleDebt();
+}
+
 function fireLifeEvent(ev){
   var amount = ev.a;
   var label = LIFE_EVENTS[ev.i % LIFE_EVENTS.length].n;
@@ -1293,6 +1343,10 @@ function advanceMonth(){
   var evs = S.lifeEvents || [];
   for (var ei = 0; ei < evs.length; ei++){
     if (evs[ei].t === t) fireLifeEvent(evs[ei]);
+  }
+  var lucky = S.luckyEvents || [];
+  for (var li = 0; li < lucky.length; li++){
+    if (lucky[li].t === t) fireLuckyEvent(lucky[li]);
   }
   settleDebt();
 
@@ -2166,7 +2220,8 @@ function finish(){
    ['In today&rsquo;s money', money(realVal), 'inflation-adjusted'],
    ['Headlines broken', String(S.news.length), '20%+ moves on the wire'],
    ['Game code', MP.table || (S.seed ? seedCode(S.seed.code) : '&mdash;'), 'this code is this market'],
-   ['Life happened', money(S.lifePaid), S.lifeCount + (S.lifeCount === 1 ? ' bill paid' : ' bills paid')]
+   ['Life happened', money(S.lifePaid), S.lifeCount + (S.lifeCount === 1 ? ' bill paid' : ' bills paid')],
+   ['Lucky breaks', '+' + money(S.luckyGot || 0), (S.luckyCount || 0) + ((S.luckyCount || 0) === 1 ? ' windfall' : ' windfalls')]
   ].forEach(function(c){
     stats.appendChild(el('div','cell','<div class="k">'+c[0]+'</div><div class="v">'+c[1]+'</div><div class="n">'+c[2]+'</div>'));
   });
@@ -2514,7 +2569,7 @@ function catchUpToNow(){
   S.joinedLate = true;
   S.savings = PAYCHECK;
   S.contributed = PAYCHECK;
-  S.owed = 0; S.lifePaid = 0; S.lifeCount = 0;
+  S.owed = 0; S.lifePaid = 0; S.lifeCount = 0; S.luckyGot = 0; S.luckyCount = 0;
   S.pos = {}; S.cds = []; S.bonds = [];
   S.nw = [];
   for (var i = 0; i < S.t; i++) S.nw.push(0);
