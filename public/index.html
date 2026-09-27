@@ -762,38 +762,32 @@ function makeSeed(code){
 
 // Bills are personal: every player draws their own schedule with ordinary randomness,
 // so two people at the same table get different bills at different times.
-function makeLifeEvents(){
-  // cheaper bills are more common: weight each by the inverse of its typical cost
-  var weights = LIFE_EVENTS.map(function(e){ return 1000 / ((e.lo + e.hi) / 2); });
-  var total = weights.reduce(function(a, b){ return a + b; }, 0);
-  function pickEvent(){
-    var r = Math.random() * total;
-    for (var i = 0; i < weights.length; i++){ r -= weights[i]; if (r <= 0) return i; }
-    return weights.length - 1;
-  }
-  var events = [], et = 7 + Math.floor(Math.random()*12);
-  while (et < MONTHS_TOTAL){
-    var i = pickEvent(), e = LIFE_EVENTS[i];
-    var amt = Math.round((e.lo + Math.random() * (e.hi - e.lo)) / 10) * 10;
-    events.push({t: et, i: i, a: amt});
-    et += 9 + Math.floor(Math.random()*22);
+// How often bills (or windfalls) hit is a per-player dice roll for the whole game,
+// drawn from a long-tailed curve: many players get a handful, some get almost none,
+// and an unlucky few get hammered. Each month is then an independent chance, so
+// nothing adds up to a fixed total.
+function luckLevel(mean, cap){
+  return Math.min(cap, -Math.log(1 - Math.random()) * mean);
+}
+function weightedPick(list){
+  var w = list.map(function(e){ return 1 / ((e.lo + e.hi) / 2); });
+  var total = w.reduce(function(x, y){ return x + y; }, 0);
+  var r = Math.random() * total, i = 0;
+  for (; i < w.length - 1; i++){ r -= w[i]; if (r <= 0) break; }
+  return i;
+}
+function randomSchedule(list, mean, cap, firstMonth, roundTo){
+  var chance = luckLevel(mean, cap) / (MONTHS_TOTAL - firstMonth);
+  var events = [];
+  for (var t = firstMonth; t < MONTHS_TOTAL; t++){
+    if (Math.random() >= chance) continue;
+    var i = weightedPick(list), e = list[i];
+    events.push({t: t, i: i, a: Math.round((e.lo + Math.random() * (e.hi - e.lo)) / roundTo) * roundTo});
   }
   return events;
 }
-
-function makeLuckyEvents(){
-  var weights = LUCKY_EVENTS.map(function(e){ return 100 / ((e.lo + e.hi) / 2); });
-  var total = weights.reduce(function(a, b){ return a + b; }, 0);
-  var events = [], et = 10 + Math.floor(Math.random()*15);
-  while (et < MONTHS_TOTAL){
-    var r = Math.random() * total, i = 0;
-    for (; i < weights.length - 1; i++){ r -= weights[i]; if (r <= 0) break; }
-    var e = LUCKY_EVENTS[i];
-    events.push({t: et, i: i, a: Math.round((e.lo + Math.random() * (e.hi - e.lo)) / 5) * 5});
-    et += 20 + Math.floor(Math.random()*21);
-  }
-  return events;
-}
+function makeLifeEvents(){ return randomSchedule(LIFE_EVENTS, 11, 34, 6, 10); }
+function makeLuckyEvents(){ return randomSchedule(LUCKY_EVENTS, 8, 26, 6, 5); }
 
 function newState(seed, mode, startAt){
   seed = seed || makeSeed();
